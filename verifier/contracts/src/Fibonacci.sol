@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {ISP1Verifier} from "@sp1-contracts/ISP1Verifier.sol";
+import {ISP1Verifier} from "../lib/sp1-contracts/contracts/src/ISP1Verifier.sol";
 
 struct PublicValuesStruct {
     uint32 n;
