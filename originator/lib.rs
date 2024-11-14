@@ -1,141 +1,96 @@
-#![cfg_attr(not(feature = "std"), no_std, no_main)]
+#![cfg_attr(not(feature = "std"), no_std)]
+
+use ink_lang as ink;
 
 #[ink::contract]
-mod originator {
+mod cross_chain_verifier {
+    use ink_storage::{
+        traits::SpreadAllocate,
+        Mapping,
+    };
+    use scale::{Decode, Encode};
 
-    /// Defines the storage of your contract.
-    /// Add new fields to the below struct in order
-    /// to add new static storage fields to your contract.
+    #[derive(Debug, Encode, Decode, Clone)]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+    pub struct CrossChainMessage {
+        source_chain_id: u32,
+        nonce: u64,
+        sender: [u8; 20],
+        payload: Vec<u8>,
+        signature: Vec<u8>,
+    }
+
+    #[derive(Debug, Encode, Decode)]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+    pub struct SP1Proof {
+        proof_bytes: Vec<u8>,
+        public_inputs: Vec<u8>,
+        public_outputs: Vec<u8>,
+    }
+
     #[ink(storage)]
-    pub struct Originator {
-        /// Stores a single `bool` value on the storage.
-        value: bool,
+    #[derive(SpreadAllocate)]
+    pub struct CrossChainVerfier {
+        owner: AccountId,
+        verified_messages: Mapping<[u8;32], bool>,
+        verifier_key:Vec<u8>,
+        processed_nonces: Mapping<(u32, u64), bool>,
     }
 
-    impl Originator {
-        /// Constructor that initializes the `bool` value to the given `init_value`.
+    // Errors that can occur during contract execution
+    #[derive(Debug, Encode, Decode)]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+    pub enum Error {
+        MessageAlreadyProcessed,
+        InvalidProof,
+        InvalidNonce,
+        Unauthorized,
+    }
+
+    // Event emitted when a message is verfied
+    #[ink(event)]
+    pub struct MessageVerified {
+        #[ink(topic)]
+        message_hash: [u8; 32],
+        source_chain_id: u32,
+        nonce: u64,
+        sender: [u8; 20],
+    }
+
+    impl CrossChainVerifier {
         #[ink(constructor)]
-        pub fn new(init_value: bool) -> Self {
-            Self { value: init_value }
+        pub fn new(initial_verifier_key: Vec<u8>) -> Self {
+            ink::lang::utils::initialize_contract(|contract: &mut Self| {
+                contract.owner = Self::env().caller();
+                contract.verifier_key = initial_verifier_key;
+            })
         }
 
-        /// Constructor that initializes the `bool` value to `false`.
-        ///
-        /// Constructors can delegate to other constructors.
-        #[ink(constructor)]
-        pub fn default() -> Self {
-            Self::new(Default::default())
-        }
-
-        /// A message that can be called on instantiated contracts.
-        /// This one flips the value of the stored `bool` from `true`
-        /// to `false` and vice versa.
+        // Verify a cross-chain message using SP1 zkvm proof
         #[ink(message)]
-        pub fn flip(&mut self) {
-            self.value = !self.value;
-        }
+        pub fn verify_message(&mut self, message: CrossChainMessage, proof: SP1Proof) -> Result<bool, Error> {
+            if self.processed_nonces.get((message.source_chain_id, message.nonce))
+            .unwrap_or(false) {
+                return Err(Error::MessageAlreadyProcessed);
+            }
 
-        /// Simply returns the current value of our `bool`.
-        #[ink(message)]
-        pub fn get(&self) -> bool {
-            self.value
-        }
-    }
+            let message_hash = self.calculate_message_hash(&message);
 
-    /// Unit tests in Rust are normally defined within such a `#[cfg(test)]`
-    /// module and test functions are marked with a `#[test]` attribute.
-    /// The below code is technically just normal Rust code.
-    #[cfg(test)]
-    mod tests {
-        /// Imports all the definitions from the outer scope so we can use them here.
-        use super::*;
+            if !self.verify_sp1_proof(&proof, &message_hash) {
+                return Err(Error::InvalidProof);
+            }
 
-        /// We test if the default constructor does its job.
-        #[ink::test]
-        fn default_works() {
-            let originator = Originator::default();
-            assert_eq!(originator.get(), false);
-        }
+            self.verified_messages.insert(message_hash, &true);
+            self.processed_nonces.insert((message.source_chain_id, message.nonce), &true);
 
-        /// We test a simple use case of our contract.
-        #[ink::test]
-        fn it_works() {
-            let mut originator = Originator::new(false);
-            assert_eq!(originator.get(), false);
-            originator.flip();
-            assert_eq!(originator.get(), true);
-        }
-    }
+            self.env().emit_event(MessageVerified {
+                message_hash,
+                source_chain_id: message.source_chain_id,
+                nonce: message.nonce,
+                sender: message.sender,
+            });
 
-
-    /// This is how you'd write end-to-end (E2E) or integration tests for ink! contracts.
-    ///
-    /// When running these you need to make sure that you:
-    /// - Compile the tests with the `e2e-tests` feature flag enabled (`--features e2e-tests`)
-    /// - Are running a Substrate node which contains `pallet-contracts` in the background
-    #[cfg(all(test, feature = "e2e-tests"))]
-    mod e2e_tests {
-        /// Imports all the definitions from the outer scope so we can use them here.
-        use super::*;
-
-        /// A helper function used for calling contract messages.
-        use ink_e2e::ContractsBackend;
-
-        /// The End-to-End test `Result` type.
-        type E2EResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
-        /// We test that we can upload and instantiate the contract using its default constructor.
-        #[ink_e2e::test]
-        async fn default_works(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
-            // Given
-            let mut constructor = OriginatorRef::default();
-
-            // When
-            let contract = client
-                .instantiate("originator", &ink_e2e::alice(), &mut constructor)
-                .submit()
-                .await
-                .expect("instantiate failed");
-            let call_builder = contract.call_builder::<Originator>();
-
-            // Then
-            let get = call_builder.get();
-            let get_result = client.call(&ink_e2e::alice(), &get).dry_run().await?;
-            assert!(matches!(get_result.return_value(), false));
-
-            Ok(())
-        }
-
-        /// We test that we can read and write a value from the on-chain contract.
-        #[ink_e2e::test]
-        async fn it_works(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
-            // Given
-            let mut constructor = OriginatorRef::new(false);
-            let contract = client
-                .instantiate("originator", &ink_e2e::bob(), &mut constructor)
-                .submit()
-                .await
-                .expect("instantiate failed");
-            let mut call_builder = contract.call_builder::<Originator>();
-
-            let get = call_builder.get();
-            let get_result = client.call(&ink_e2e::bob(), &get).dry_run().await?;
-            assert!(matches!(get_result.return_value(), false));
-
-            // When
-            let flip = call_builder.flip();
-            let _flip_result = client
-                .call(&ink_e2e::bob(), &flip)
-                .submit()
-                .await
-                .expect("flip failed");
-
-            // Then
-            let get = call_builder.get();
-            let get_result = client.call(&ink_e2e::bob(), &get).dry_run().await?;
-            assert!(matches!(get_result.return_value(), true));
-
-            Ok(())
+            Ok(true)
         }
     }
 }
