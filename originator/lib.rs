@@ -1,96 +1,132 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use ink_lang as ink;
-
 #[ink::contract]
-mod cross_chain_verifier {
-    use ink_storage::{
-        traits::SpreadAllocate,
-        Mapping,
-    };
-    use scale::{Decode, Encode};
+mod cross_chain_messaging {
+    use ink::prelude::string::String;
+    use ink::storage::Mapping;
 
-    #[derive(Debug, Encode, Decode, Clone)]
-    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
-    pub struct CrossChainMessage {
-        source_chain_id: u32,
-        nonce: u64,
-        sender: [u8; 20],
-        payload: Vec<u8>,
-        signature: Vec<u8>,
-    }
-
-    #[derive(Debug, Encode, Decode)]
-    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
-    pub struct SP1Proof {
-        proof_bytes: Vec<u8>,
-        public_inputs: Vec<u8>,
-        public_outputs: Vec<u8>,
-    }
-
+    // The main contract structure.
     #[ink(storage)]
-    #[derive(SpreadAllocate)]
-    pub struct CrossChainVerfier {
-        owner: AccountId,
-        verified_messages: Mapping<[u8;32], bool>,
-        verifier_key:Vec<u8>,
-        processed_nonces: Mapping<(u32, u64), bool>,
+    pub struct CrossChainMessaging {
+        /// Keeps track of the latest nonce for incoming messages.
+        incoming_nonce: u64,
+        /// Keeps track of the latest nonce for outgoing messages.
+        outgoing_nonce: u64,
+        /// Mapping to store messages received from Ethereum.
+        messages: Mapping<u64, String>,
     }
 
-    // Errors that can occur during contract execution
-    #[derive(Debug, Encode, Decode)]
+    /// Structure for proof data.
+    #[derive(scale::Encode, scale::Decode, Clone, Debug, PartialEq, Eq)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
-    pub enum Error {
-        MessageAlreadyProcessed,
-        InvalidProof,
-        InvalidNonce,
-        Unauthorized,
+    pub struct ProofData {
+        // Placeholder for actual proof structure (depends on SP1 proof format)
+        pub proof: Vec<u8>,
+        pub message_hash: [u8; 32],
     }
 
-    // Event emitted when a message is verfied
-    #[ink(event)]
-    pub struct MessageVerified {
-        #[ink(topic)]
-        message_hash: [u8; 32],
-        source_chain_id: u32,
-        nonce: u64,
-        sender: [u8; 20],
+    /// Structure for outgoing messages.
+    #[derive(scale::Encode, scale::Decode, Clone, Debug, PartialEq, Eq)]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+    pub struct OutgoingMessage {
+        pub data: String,
+        pub nonce: u64,
     }
 
-    impl CrossChainVerifier {
+    impl CrossChainMessaging {
+        // Constructor to initialize the contract.
         #[ink(constructor)]
-        pub fn new(initial_verifier_key: Vec<u8>) -> Self {
-            ink::lang::utils::initialize_contract(|contract: &mut Self| {
-                contract.owner = Self::env().caller();
-                contract.verifier_key = initial_verifier_key;
-            })
+        pub fn new() -> Self {
+            Self {
+                incoming_nonce: 0,
+                outgoing_nonce: 0,
+                messages: Mapping::default(),
+            }
         }
 
-        // Verify a cross-chain message using SP1 zkvm proof
+        /// Store an incoming message from Ethereum.
         #[ink(message)]
-        pub fn verify_message(&mut self, message: CrossChainMessage, proof: SP1Proof) -> Result<bool, Error> {
-            if self.processed_nonces.get((message.source_chain_id, message.nonce))
-            .unwrap_or(false) {
-                return Err(Error::MessageAlreadyProcessed);
+        pub fn store_message(&mut self, data: String, proof: ProofData) -> bool {
+            // Verify the proof using SP1 (stubbed for now)
+            if !self.verify_proof(proof, &data) {
+                return false;
             }
 
-            let message_hash = self.calculate_message_hash(&message);
+            // Increment the incoming nonce
+            self.incoming_nonce += 1;
 
-            if !self.verify_sp1_proof(&proof, &message_hash) {
-                return Err(Error::InvalidProof);
-            }
+            // Store the message
+            self.messages.insert(self.incoming_nonce, &data);
 
-            self.verified_messages.insert(message_hash, &true);
-            self.processed_nonces.insert((message.source_chain_id, message.nonce), &true);
-
-            self.env().emit_event(MessageVerified {
-                message_hash,
-                source_chain_id: message.source_chain_id,
-                nonce: message.nonce,
-                sender: message.sender,
+            // Emit an event for the stored message
+            self.env().emit_event(MessageStored {
+                nonce: self.incoming_nonce,
+                data: data.clone(),
             });
 
-            Ok(true)
+            true
         }
+
+        // TODO: proof verification for an incoming message
+        #[ink(message)]
+        pub fn verify_proof<'a>(&self, _proof: ProofData, _data: &'a String) -> bool {
+            // TODO
+            true
+        }
+
+        /// Retrieve a stored message by its nonce.
+        #[ink(message)]
+        pub fn get_message(&self, nonce: u64) -> Option<String> {
+            self.messages.get(nonce)
+        }
+
+        /// Prepare an outgoing message to Ethereum.
+        #[ink(message)]
+        pub fn prepare_outgoing_message(&mut self, data: String) -> OutgoingMessage {
+            // Increment the outgoing nonce
+            self.outgoing_nonce += 1;
+
+            // Construct the outgoing message
+            let outgoing_message = OutgoingMessage {
+                data: data.clone(),
+                nonce: self.outgoing_nonce,
+            };
+
+            // Emit an event for the outgoing message
+            self.env().emit_event(MessagePrepared {
+                nonce: self.outgoing_nonce,
+                data,
+            });
+
+            outgoing_message
+        }
+
+        /// Get the current incoming nonce.
+        #[ink(message)]
+        pub fn get_incoming_nonce(&self) -> u64 {
+            self.incoming_nonce
+        }
+
+        /// Get the current outgoing nonce.
+        #[ink(message)]
+        pub fn get_outgoing_nonce(&self) -> u64 {
+            self.outgoing_nonce
+        }
+    }
+
+    /// Event emitted when a message is stored.
+    #[ink(event)]
+    pub struct MessageStored {
+        #[ink(topic)]
+        nonce: u64,
+        data: String,
+    }
+
+    /// Event emitted when an outgoing message is prepared.
+    #[ink(event)]
+    pub struct MessagePrepared {
+        #[ink(topic)]
+        nonce: u64,
+        data: String,
     }
 }
