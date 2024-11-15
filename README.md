@@ -6,24 +6,28 @@ This cross-chain message verifier is a system designed to process, validate, and
 
 Cross-chain communication is essential in the multi-blockchain ecosystem. This system verifies messages between chains while maintaining security, privacy, and integrity. It employs zkVM proofs for message verification and integrates with Solidity smart contracts for on-chain validation.
 
-Features
-    • Zero-Knowledge Proofs: Ensures confidentiality and integrity of messages without exposing sensitive data.
-    • Cross-Chain Compatibility: Supports source and destination chain identification.
-    • Smart Contract Integration: Verifies proofs on-chain using a Solidity smart contract.
-    • Rust-Based zkVM: Built with Rust for performance and security.
-    • Fixture Generation: Provides testing utilities for generating proof fixtures for Solidity validation.
+## Features
+
+- Zero-Knowledge Proofs: Ensures confidentiality and integrity of messages without exposing sensitive data.
+- Cross-Chain Compatibility: Supports source and destination chain identification.
+- Smart Contract Integration: Verifies proofs on-chain using a Solidity smart contract.
+- Rust-Based zkVM: Built with Rust for performance and security.
+- Fixture Generation: Provides testing utilities for generating proof fixtures for Solidity validation.
 
 ## Installation
 
 1. Clone the Repository:
 
+```bash
 git clone https://github.com/Lynette7/cross-chain-verification-system.git
 cd cross-chain-verification-system/verifier
+```
 
 2. Install Dependencies:
 Ensure you have the following installed:
-    •Rust
-    •Foundry for Solidity testing
+
+- Rust
+- Foundry for Solidity testing
 
 ## Usage
 
@@ -58,6 +62,7 @@ RUST_LOG=info cargo run --release -- --prove --message "Hello, this is my first 
 ```
 
 Parameters:
-    • --message: The cross-chain message to verify.
-    • --source-chain-id: ID of the source chain.
-    • --destination-chain-id: ID of the destination chain.
+
+- --message: The cross-chain message to verify.
+- --source-chain-id: ID of the source chain.
+- --destination-chain-id: ID of the destination chain.
