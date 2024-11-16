@@ -19,7 +19,7 @@ pub const CROSS_CHAIN_ELF: &[u8] = include_bytes!("../../../elf/riscv32im-succin
 #[clap(author, version, about, long_about = None)]
 struct EVMArgs {
     #[clap(long, default_value = "20")]
-    n: u32, // Not used, but included for consistency
+    n: u32,
 
     #[clap(long, value_enum, default_value = "groth16")]
     system: ProofSystem,
@@ -97,9 +97,9 @@ fn main() {
 fn create_proof_fixture(
     proof: &SP1ProofWithPublicValues,
     vk: &SP1VerifyingKey,
-    input_message: Vec<u8>,
-    source_chain_id: u32,
-    destination_chain_id: u32,
+    _input_message: Vec<u8>,
+    _source_chain_id: u32,
+    _destination_chain_id: u32,
     system: ProofSystem,
 ) {
     // Deserialize the public values.
