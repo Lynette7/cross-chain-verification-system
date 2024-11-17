@@ -48,6 +48,8 @@ cargo prove build
 2. Execute the program with the RISC-V runtime
 
 ```bash
+cd script
+
 RUST_LOG=info cargo run --release -- --execute --message "Hello, this is my first ZK application" --source-chain-id 1 --destination-chain-id 2
 ```
 
@@ -58,6 +60,8 @@ RUST_LOG=info cargo run --release -- --execute --message "Hello, this is my firs
 - Run Proof Generation:
 
 ```bash
+cd script
+
 RUST_LOG=info cargo run --release -- --prove --message "Hello, this is my first ZK application" --source-chain-id 1 --destination-chain-id 2
 ```
 
